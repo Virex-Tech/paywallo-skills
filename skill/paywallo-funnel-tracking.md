@@ -2,7 +2,9 @@
 
 > **Pré-requisito:** [`paywallo-sdk-setup.md`](./paywallo-sdk-setup.md) já aplicado.
 
-Esta skill cobre como instrumentar o funil do `base-app` (welcome → onboarding → auth → home → paywall) para que o dashboard do Paywallo calcule taxa de conversão e identifique drop-off automaticamente.
+> ℹ️ **Status da doc oficial:** as páginas `/docs/identify` e `/docs/funnel` no paywallo.com.br ainda estão em construção. As APIs descritas aqui (`useOnboarding`, `PaywalloClient.identify`, `PaywalloClient.track`) **existem no SDK v2.1.x** mas serão documentadas oficialmente em breve. Confirme com o time do Virex Tech se algum nome mudar antes da publicação da doc.
+
+Esta skill cobre como instrumentar o funil do seu app (welcome → onboarding → auth → home → paywall) para que o dashboard do Paywallo calcule taxa de conversão e identifique drop-off automaticamente.
 
 > ⚠️ **A API mudou no SDK 2.x.** Eventos manuais com prefixo `$onboarding_*` e schemas custom (`stepIndex`, `totalSteps`, `timeSinceStart`) **não são mais necessários**. O SDK tem um `OnboardingManager` dedicado e o hook `useOnboarding()` que fala com o server na taxonomia correta.
 
@@ -28,7 +30,7 @@ Esta skill cobre como instrumentar o funil do `base-app` (welcome → onboarding
 
 ## 2. Onboarding: o padrão correto
 
-O `base-app` tem `src/features/onboarding/` com fluxo multi-step. Plugue o tracking via hook:
+Se o app tem uma estrutura tipo `src/features/onboarding/` com fluxo multi-step, plugue o tracking via hook:
 
 ```tsx
 // src/features/onboarding/hooks/useOnboardingTracking.ts

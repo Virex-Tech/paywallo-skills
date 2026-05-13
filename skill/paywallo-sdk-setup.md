@@ -1,10 +1,12 @@
 # Skill: Paywallo SDK — Setup & Core Integration
 
 > **SDK alvo:** `@virex-tech/paywallo-sdk` v2.1.x
-> **App alvo:** `base-app` (React Native + Expo SDK 54)
+> **Stack alvo:** React Native + Expo SDK 54
 > **Stack pressuposta:** Expo Router, Zustand, React Query, i18next, theme tokens
 
-Setup mínimo **funcional** do SDK Paywallo no `base-app`. Esta skill cobre instalação, configuração, montagem do Provider, identificação de usuário em login/logout e wiring de erros para observability.
+> ℹ️ **Status da doc oficial:** a página `/docs/installation` no paywallo.com.br ainda está em construção. As APIs descritas aqui (`PaywalloProvider`, `PaywalloClient.identify`, `PaywalloClient.reset`, `sessionFlags`) **existem no SDK v2.1.x** mas serão documentadas oficialmente em breve. Confirme com o time do Virex Tech se algum nome mudar antes da publicação da doc.
+
+Setup mínimo **funcional** do SDK Paywallo no seu app. Esta skill cobre instalação, configuração, montagem do Provider, identificação de usuário em login/logout e wiring de erros para observability.
 
 > ⚠️ **Não envolva o SDK em um Singleton wrapper customizado.** O `PaywalloClient` exportado pelo pacote já é singleton. Wrappers adicionam latência (Promise race / timeout) e duplicam lógica que o SDK já fornece (`waitUntilReady`, `onError`, fila offline).
 
@@ -25,7 +27,6 @@ Setup mínimo **funcional** do SDK Paywallo no `base-app`. Esta skill cobre inst
 ## 2. Instalação
 
 ```bash
-cd base-app
 npm install @virex-tech/paywallo-sdk
 ```
 
@@ -64,7 +65,7 @@ Se nenhum desses casos se aplica, **não instale**. O SDK detecta a ausência e 
 
 ## 3. Variáveis de ambiente
 
-Adicione em `base-app/.env.example` e `base-app/.env`:
+Adicione em `.env.example` e `.env`:
 
 ```env
 EXPO_PUBLIC_PAYWALLO_APP_KEY=pk_xxxxxxxx
@@ -86,7 +87,7 @@ O Provider faz **tudo** automaticamente ao montar:
 - monta os modais de paywall (web view + modal nativo) — `presentCampaign`/`presentPaywall` renderizam dentro deles
 - registra os listeners de transações nativas e push
 
-Plugue dentro de `src/components/core/AppProviders/index.tsx` do `base-app`, **acima** dos providers que dependem de identidade do usuário (React Query, navegação):
+Plugue no arquivo do seu app que monta os Providers (ex: `src/components/core/AppProviders/index.tsx`), **acima** dos providers que dependem de identidade do usuário (React Query, navegação):
 
 ```tsx
 // src/components/core/AppProviders/index.tsx
@@ -143,7 +144,7 @@ interface PaywalloInitConfig {
   environment?: "Production" | "Sandbox"; // default: deduzido de __DEV__
   autoStartSession?: boolean; // default: true
   sessionFlags?: string[]; // flags pré-resolvidas no boot (síncronas)
-  subscriptionCacheTTL?: number; // ms — cache de hasActiveSubscription
+  subscriptionCacheTTL?: number; // ms — cache do status de subscription
   autoPreloadCampaign?: string; // placement a pré-carregar no boot
   requestATT?: boolean; // pede ATT permission no iOS
   errorStrings?: { title?: string; retry?: string; close?: string };
@@ -163,7 +164,7 @@ interface PaywalloInitConfig {
 
 `PaywalloClient.identify(...)` associa o `distinctId` anônimo (criado no primeiro boot) ao seu usuário identificado. **Pode ser chamado antes ou depois do init** — chamadas pré-init são enfileiradas automaticamente.
 
-No `base-app`, plugue no hook de auth (`src/features/auth/hooks/useAuth.ts` ou onde a session for hidratada):
+Plugue no hook de auth do seu app (ex: `src/features/auth/hooks/useAuth.ts`, ou onde quer que a session seja hidratada):
 
 ```tsx
 import { PaywalloClient } from "@virex-tech/paywallo-sdk";

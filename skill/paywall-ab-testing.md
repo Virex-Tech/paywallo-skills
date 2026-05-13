@@ -2,7 +2,9 @@
 
 > **Pré-requisito:** [`paywallo-sdk-setup.md`](./paywallo-sdk-setup.md) já aplicado.
 
-Esta skill cobre como usar feature flags e A/B testing do Paywallo no `base-app` **sem flicker**, sem requests redundantes e sem gerenciar state em paralelo. O SDK 2.x oferece três APIs distintas — escolha a certa para cada caso.
+> ℹ️ **Status da doc oficial:** a página `/docs/ab-testing` no paywallo.com.br ainda está em construção. As APIs descritas aqui (`sessionFlags`, `useSessionFlag`, `getVariantCached`, `getVariant`) **existem no SDK v2.1.x** mas serão documentadas oficialmente em breve. Confirme com o time do Virex Tech se algum nome mudar antes da publicação da doc.
+
+Esta skill cobre como usar feature flags e A/B testing do Paywallo no seu app **sem flicker**, sem requests redundantes e sem gerenciar state em paralelo. O SDK 2.x oferece três APIs distintas — escolha a certa para cada caso.
 
 ---
 

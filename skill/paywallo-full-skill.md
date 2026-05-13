@@ -1,9 +1,9 @@
 # Skill: Paywallo SDK — Master Guide (Full Integration)
 
 > **SDK alvo:** `@virex-tech/paywallo-sdk` v2.1.x
-> **App alvo:** `base-app` (React Native + Expo SDK 54, TypeScript strict, Expo Router, Zustand, React Query, i18next)
+> **Stack alvo:** React Native + Expo SDK 54, TypeScript strict, Expo Router, Zustand, React Query, i18next
 
-Guia consolidado para integrar o Paywallo no `base-app` ponta-a-ponta. Cobre setup, identidade, paywalls, funil, A/B testing e push notifications. Cada seção aponta para a skill detalhada correspondente.
+Guia consolidado para integrar o Paywallo no seu app ponta-a-ponta. Cobre setup, identidade, paywalls, funil, A/B testing e push notifications. Cada seção aponta para a skill detalhada correspondente.
 
 ---
 
@@ -11,7 +11,7 @@ Guia consolidado para integrar o Paywallo no `base-app` ponta-a-ponta. Cobre set
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  base-app                                                         │
+│  seu app                                                          │
 │                                                                   │
 │   ┌─ PaywalloProvider (envolve tudo) ─────────────────────────┐   │
 │   │                                                            │   │
@@ -33,8 +33,8 @@ Guia consolidado para integrar o Paywallo no `base-app` ponta-a-ponta. Cobre set
 │   │   │  │   • useOnboarding().complete() ao fim              │ │   │
 │   │   │                                                       │ │   │
 │   │   │  ┌─ Gates de paywall                                  │ │   │
-│   │   │  │   • requireSubscriptionWithCampaign("placement")   │ │   │
-│   │   │  │   • presentCampaign(...) em handlers              │ │   │
+│   │   │  │   • usePaywallo().presentCampaign("placement")     │ │   │
+│   │   │  │   • usePaywallo().presentPaywall("paywall_id")     │ │   │
 │   │   │  │   • useSubscription() para state reativo           │ │   │
 │   │   │  │                                                    │ │   │
 │   │   │  └─ A/B tests                                          │ │   │
@@ -63,7 +63,6 @@ Guia consolidado para integrar o Paywallo no `base-app` ponta-a-ponta. Cobre set
 ### 1.1. Instalar
 
 ```bash
-cd base-app
 npm install @virex-tech/paywallo-sdk
 cd ios && pod install && cd ..
 ```
@@ -71,7 +70,7 @@ cd ios && pod install && cd ..
 ### 1.2. .env
 
 ```env
-# base-app/.env e .env.example
+# .env e .env.example
 EXPO_PUBLIC_PAYWALLO_APP_KEY=
 ```
 
@@ -154,35 +153,38 @@ Se não aparecer, confira: `appKey` formato `pk_xxxxxxxx` sem espaços, `pod ins
 
 ## 2. Apresentar paywall
 
-**Padrão recomendado** — gate completo:
+**Padrão recomendado** — placement via campanha (usa hook `usePaywallo()`):
 
 ```tsx
-const granted =
-  await PaywalloClient.requireSubscriptionWithCampaign("home_unlock");
-if (!granted) return;
-// user tem sub agora
+import { usePaywallo } from "@virex-tech/paywallo-sdk";
+
+const paywallo = usePaywallo();
+const result = await paywallo.presentCampaign("home_unlock");
+
+if (result.purchased) {
+  navigate("home");
+} else if (result.skippedReason === "subscriber") {
+  navigate("home"); // já era assinante
+}
+// se nenhum dos dois: user cancelou
 ```
 
-**Padrão controle total**:
+**Por ID** (paywall específico criado no dashboard):
 
 ```tsx
-const result = await PaywalloClient.presentCampaign("onboarding_end");
-if (result.purchased) navigate("home");
-else if (result.cancelled) showSecondChanceOffer();
+const result = await paywallo.presentPaywall("paywall_onboarding");
 ```
 
-**Forçar exibição mesmo se já é assinante** (tela "manage subscription"):
+**Forçar exibição mesmo se já é assinante** (tela "ver planos"):
 
 ```tsx
-const result = await PaywalloClient.presentCampaign("plans", {
-  forceShow: true,
-});
+const result = await paywallo.presentCampaign("plans", { forceShow: true });
 ```
 
 **Callbacks inline** (alternativa ao `await`):
 
 ```tsx
-await PaywalloClient.presentPaywall("onboarding_end", {
+await paywallo.presentPaywall("onboarding_end", {
   onPurchase: (productId) => analytics.track("purchase", { productId }),
   onDismiss: () => console.log("fechou"),
   onError: (err) => reportError(err),
@@ -192,16 +194,20 @@ await PaywalloClient.presentPaywall("onboarding_end", {
 **State reativo de subscription**:
 
 ```tsx
-const { isActive, subscription, entitlements, refresh } = useSubscription();
+import { useSubscription } from "@virex-tech/paywallo-sdk";
+
+const { isActive } = useSubscription();
 ```
 
-**Compra direta** (sem paywall — botão de upgrade fixo):
+**Restaurar compras** (botão obrigatório nas lojas):
 
 ```tsx
-const { purchase, isPurchasing } = usePurchase();
-const outcome = await purchase("com.app.annual");
-if (outcome.status === "success") {
-  /* libera feature */
+import { usePurchase } from "@virex-tech/paywallo-sdk";
+
+const { restore, isRestoring } = usePurchase();
+const purchases = await restore();
+if (purchases.length > 0) {
+  /* assinatura recuperada */
 }
 ```
 
@@ -283,7 +289,7 @@ if (result.variant === "on") {
 npm install @react-native-firebase/app @react-native-firebase/messaging
 ```
 
-Adicione `google-services.json` (Android) e `GoogleService-Info.plist` (iOS) — o `base-app` já tem placeholders em `android/app/` e `ios/`.
+Adicione `google-services.json` (Android) e `GoogleService-Info.plist` (iOS) em `android/app/` e `ios/`.
 
 **Pedir permissão** (em momento contextual, não no boot):
 
@@ -319,13 +325,13 @@ await notificationsManager.optOut(); // remove token no server
 
 ---
 
-## 6. Convenções alinhadas ao `base-app/CLAUDE.md`
+## 6. Convenções recomendadas
 
-A integração precisa respeitar as hard rules do `base-app`:
+Boas práticas para manter a integração consistente com o resto do app:
 
-| Regra do CLAUDE.md                          | Como aplica ao Paywallo                                                      |
+| Regra                                       | Como aplica ao Paywallo                                                      |
 | :------------------------------------------ | :--------------------------------------------------------------------------- |
-| Sem `any`                                   | SDK é totalmente tipado — use os types exportados (`CampaignResult`, etc.)   |
+| Sem `any`                                   | SDK é totalmente tipado — use os types exportados pelo pacote                |
 | Sem `console.log`                           | Use o `onError` callback do Provider                                         |
 | Sem `useState/useEffect` em **componentes** | Encapsular lógica de paywall em hooks (`useUnlockPremium`, `useSessionFlag`) |
 | Sem cores/spacing hardcoded                 | Se renderizar paywall local: usar `theme.colors.*`, `theme.spacing.*`        |
@@ -334,7 +340,7 @@ A integração precisa respeitar as hard rules do `base-app`:
 | 1 export por arquivo                        | Um hook / componente por arquivo                                             |
 | Imports ordenados                           | `react` → expo/3rd-party → `@virex-tech/paywallo-sdk` → `@/...` → relativos  |
 
-### Estrutura sugerida no `base-app`
+### Estrutura sugerida
 
 ```
 src/
@@ -371,7 +377,7 @@ src/
 
 ## 7. Decisão: precisa de servidor (`base-server`)?
 
-**Não, na maioria dos casos.** O SDK fala direto com a Paywallo, valida compras lá, expõe estado via `hasActiveSubscription()` / `useSubscription()`.
+**Não, na maioria dos casos.** O SDK fala direto com a Paywallo, valida compras lá, expõe estado via `useSubscription()`.
 
 **Sim, se você precisa:**
 
@@ -470,7 +476,7 @@ E atualize o `User.isPremium` correspondente. **Esta é uma extensão fora do es
 | Paywall remoto não abre, retorna `result.presented: false` | Placement não existe no dashboard              | Crie no dashboard, ou implemente fallback local                              |
 | Variants `null` no primeiro boot                           | Sem rede + flag não em `sessionFlags`          | Mover para `sessionFlags` ou aceitar `null` com default                      |
 | Eventos não aparecem no dashboard                          | Buffer não flushou (app crashou)               | Verificar fila offline (`getOfflineQueueSize()`)                             |
-| `hasActiveSubscription()` retorna `false` após compra      | Provider ainda não recebeu update da transação | Use `useSubscription()` (atualiza via listener) em vez de chamada imperativa |
+| `useSubscription().isActive` ainda `false` logo após compra | Listener da transação ainda não atualizou        | Aguarde o próximo render — o hook atualiza sozinho via listener de transação |
 | Push token não registra                                    | Peer deps Firebase não instaladas              | `npm install @react-native-firebase/app @react-native-firebase/messaging`    |
 | iOS reclama de privacy manifest                            | Falta entrada de tracking                      | Adicionar `NSUserTrackingUsageDescription` em `Info.plist`                   |
 
@@ -481,7 +487,7 @@ E atualize o `User.isPremium` correspondente. **Esta é uma extensão fora do es
 | Skill                                                          | Foco                                                                |
 | :------------------------------------------------------------- | :------------------------------------------------------------------ |
 | [`paywallo-sdk-setup.md`](./paywallo-sdk-setup.md)             | Instalação, Provider, identify, reset, onError                      |
-| [`paywallo-paywall-skill.md`](./paywallo-paywall-skill.md)     | `requireSubscriptionWithCampaign`, `presentCampaign`, `gateContent` |
+| [`paywallo-paywall-skill.md`](./paywallo-paywall-skill.md)     | `usePaywallo` (`presentPaywall`/`presentCampaign`), `useSubscription`, `usePurchase` |
 | [`paywallo-funnel-tracking.md`](./paywallo-funnel-tracking.md) | `useOnboarding`, eventos custom, identify enriquecido               |
 | [`paywall-ab-testing.md`](./paywall-ab-testing.md)             | `sessionFlags`, `getVariantCached`, conditional flags               |
 

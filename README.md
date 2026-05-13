@@ -12,7 +12,7 @@ Cada arquivo em [`skill/`](./skill) é um guia focado num pedaço da integraçã
 | :---------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------- |
 | [`paywallo-full-skill.md`](./skill/paywallo-full-skill.md)              | **Master guide.** Visão arquitetural + checklist ponta-a-ponta. Use como índice e ponto de partida.      |
 | [`paywallo-sdk-setup.md`](./skill/paywallo-sdk-setup.md)                | Setup mínimo funcional: instalação, `PaywalloProvider`, `identify` no login, `reset` no logout, errors.  |
-| [`paywallo-paywall-skill.md`](./skill/paywallo-paywall-skill.md)        | Apresentar paywalls e gatear conteúdo premium (`requireSubscriptionWithCampaign`, `presentCampaign`...). |
+| [`paywallo-paywall-skill.md`](./skill/paywallo-paywall-skill.md)        | Apresentar paywalls e gatear conteúdo premium via hooks (`usePaywallo`, `useSubscription`, `usePurchase`). |
 | [`paywall-ab-testing.md`](./skill/paywall-ab-testing.md)                | Feature flags e A/B testing sem flicker (`sessionFlags`, `getVariantCached`, `getVariant`).              |
 | [`paywallo-funnel-tracking.md`](./skill/paywallo-funnel-tracking.md)    | Instrumentação do funil: onboarding, eventos custom, drop-off automático.                                |
 
@@ -93,7 +93,7 @@ O Claude Code lê o `description` e dispara a skill sozinho quando o pedido casa
 
 ## Stack pressuposta nas skills
 
-As skills foram escritas pro `base-app` da Virex Tech:
+As skills assumem um app com a seguinte stack:
 
 - React Native + Expo SDK 54
 - TypeScript strict
@@ -101,7 +101,7 @@ As skills foram escritas pro `base-app` da Virex Tech:
 - Zustand + React Query
 - i18next + theme tokens
 
-A maior parte se aplica a qualquer RN/Expo — os trechos específicos do `base-app` (ex: `AppProviders`, `useOnboarding`) servem como template; adapte ao seu app.
+A maior parte se aplica a qualquer RN/Expo — os trechos com nomes específicos de arquivos/hooks (ex: `AppProviders`, `useOnboarding`) servem como template; adapte ao seu app.
 
 ---
 
@@ -109,7 +109,7 @@ A maior parte se aplica a qualquer RN/Expo — os trechos específicos do `base-
 
 - `@virex-tech/paywallo-sdk` **v2.1.x**
 
-Se você está em v1.x ou v2.0.x, algumas APIs (`useOnboarding`, `requireSubscriptionWithCampaign`, `sessionFlags`) podem não existir ou ter assinatura diferente. Veja o `CHANGELOG` do pacote antes.
+Se você está em v1.x ou v2.0.x, algumas APIs (`useOnboarding`, `sessionFlags`, hooks como `usePaywallo`) podem não existir ou ter assinatura diferente. Veja o `CHANGELOG` do pacote antes.
 
 ---
 
