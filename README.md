@@ -12,9 +12,9 @@ Cada arquivo em [`skill/`](./skill) é um guia focado num pedaço da integraçã
 | :---------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------- |
 | [`paywallo-full-skill.md`](./skill/paywallo-full-skill.md)              | **Master guide.** Visão arquitetural + checklist ponta-a-ponta. Use como índice e ponto de partida.      |
 | [`paywallo-sdk-setup.md`](./skill/paywallo-sdk-setup.md)                | Setup mínimo funcional: instalação, `PaywalloProvider`, `identify` no login, `reset` no logout, errors.  |
-| [`paywallo-paywall-skill.md`](./skill/paywallo-paywall-skill.md)        | Apresentar paywalls e gatear conteúdo premium via hooks (`usePaywallo`, `useSubscription`, `usePurchase`). |
+| [`paywallo-paywall-skill.md`](./skill/paywallo-paywall-skill.md)        | Apresentar paywall via **Superwall** (bridge automático) ou UI própria (`useProducts`, `usePurchase`), status de assinatura e restore — o Paywallo em si não apresenta paywall desde a 2.10.0. |
 | [`paywall-ab-testing.md`](./skill/paywall-ab-testing.md)                | Feature flags e A/B testing sem flicker (`sessionFlags`, `getVariantCached`, `getVariant`).              |
-| [`paywallo-funnel-tracking.md`](./skill/paywallo-funnel-tracking.md)    | Instrumentação do funil: onboarding, eventos custom, drop-off automático.                                |
+| [`paywallo-funnel-tracking.md`](./skill/paywallo-funnel-tracking.md)    | Instrumentação do funil: onboarding (`useOnboarding`), eventos custom.                                   |
 
 > Todos os arquivos pressupõem `paywallo-sdk-setup.md` aplicado primeiro. O `full-skill` é o índice — comece por ele se for a primeira integração.
 
@@ -107,9 +107,11 @@ A maior parte se aplica a qualquer RN/Expo — os trechos com nomes específicos
 
 ## Versão alvo do SDK
 
-- `@virex-tech/paywallo-sdk` **v2.1.x**
+- `@virex-tech/paywallo-sdk` **^2.10.0**
 
-Se você está em v1.x ou v2.0.x, algumas APIs (`useOnboarding`, `sessionFlags`, hooks como `usePaywallo`) podem não existir ou ter assinatura diferente. Veja o `CHANGELOG` do pacote antes.
+Mudança de arquitetura importante na 2.10.0: o Paywallo **parou de apresentar paywall**. As APIs de paywall/campanha próprias (`presentPaywall`, `presentCampaign`, `getPaywall`, `getCampaign`, `preload*`, `requireSubscriptionWithCampaign`, etc.) viraram stubs `@deprecated` inertes — continuam exportadas por compatibilidade, mas não fazem nada. A apresentação passou a ser feita via **Superwall** (`expo-superwall`, bridge automático de compra) ou UI própria com `useProducts` + `usePurchase`; o Paywallo ficou responsável por identidade, atribuição, funil, flags, push e fonte de verdade de assinatura (via webhooks).
+
+Se você está em versões anteriores a 2.6.0, várias APIs (`useOnboarding` com `order` obrigatório, `sessionFlags`) podem não existir ou ter assinatura diferente. Veja o `CHANGELOG` do pacote (`panel-sdk/CHANGELOG.md`) antes de migrar.
 
 ---
 

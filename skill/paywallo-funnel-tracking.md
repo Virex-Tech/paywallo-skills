@@ -1,30 +1,31 @@
 # Skill: Paywallo SDK — Tracking de Funil & Eventos
 
-> **Pré-requisito:** [`paywallo-sdk-setup.md`](./paywallo-sdk-setup.md) já aplicado.
+> **SDK alvo:** `@virex-tech/paywallo-sdk` ^2.10.0
 
-> ℹ️ **Status da doc oficial:** as páginas `/docs/identify` e `/docs/funnel` no paywallo.com.br ainda estão em construção. As APIs descritas aqui (`useOnboarding`, `PaywalloClient.identify`, `PaywalloClient.track`) **existem no SDK v2.1.x** mas serão documentadas oficialmente em breve. Confirme com o time do Virex Tech se algum nome mudar antes da publicação da doc.
+> **Pré-requisito:** [`paywallo-sdk-setup.md`](./paywallo-sdk-setup.md) já aplicado.
 
 Esta skill cobre como instrumentar o funil do seu app (welcome → onboarding → auth → home → paywall) para que o dashboard do Paywallo calcule taxa de conversão e identifique drop-off automaticamente.
 
-> ⚠️ **A API mudou no SDK 2.x.** Eventos manuais com prefixo `$onboarding_*` e schemas custom (`stepIndex`, `totalSteps`, `timeSinceStart`) **não são mais necessários**. O SDK tem um `OnboardingManager` dedicado e o hook `useOnboarding()` que fala com o server na taxonomia correta.
+> ⚠️ **A partir da 2.10, o Paywallo não apresenta paywall.** O paywall próprio e a engine de campanhas foram removidos do SDK — a apresentação é 100% do Superwall, com um bridge automático (`SuperwallAutoBridge`) que traduz os callbacks do Superwall (`onPaywallPresent`/`onPaywallDismiss`/`transactionComplete`) em eventos Paywallo. Você não instrumenta paywall manualmente em nenhum cenário coberto por esta skill.
+>
+> ⚠️ **`useOnboarding().drop()` não existe mais** (removido na 2.6.0). O abandono do funil é inferido no **servidor** por inatividade — não há chamada de "desistência" no SDK.
 
 ---
 
 ## 1. Anatomia do funil que o Paywallo mede
 
-| Camada               | Como o SDK rastreia                          | O que você instrumenta               |
-| :------------------- | :------------------------------------------- | :----------------------------------- |
-| Install / first open | Automático no boot (`lifecycle.install`)     | Nada                                 |
-| Sessão               | Automático (`autoStartSession: true`)        | Nada                                 |
-| Identify             | `PaywalloClient.identify({ email })`         | Após login                           |
-| **Onboarding steps** | `useOnboarding().step(stepName)`             | Em cada tela do onboarding           |
-| **Onboarding done**  | `useOnboarding().complete()`                 | Na última tela / antes do paywall    |
-| **Onboarding drop**  | `useOnboarding().drop(stepName)` (opcional)  | Botão "skip" / abandono explícito    |
-| Paywall view         | Automático em `presentCampaign`              | Nada                                 |
-| Purchase             | Automático após validação StoreKit / Play    | Nada                                 |
-| Eventos custom       | `PaywalloClient.track(name, { properties })` | Eventos de produto (CTA, share, ...) |
+| Camada               | Como o SDK rastreia                                                      | O que você instrumenta               |
+| :------------------- | :------------------------------------------------------------------------ | :----------------------------------- |
+| Install / first open | Automático no boot (evento `$app_installed`)                             | Nada                                 |
+| Sessão               | Automático (`$session_start` / `lifecycle{type:"session_end"}`)          | Nada                                 |
+| Identify             | `PaywalloClient.identify({ email })`                                     | Após login                           |
+| **Onboarding steps** | `useOnboarding().step(stepName, order, options?)`                        | Em cada tela do onboarding           |
+| **Onboarding done**  | `useOnboarding().complete(options?)`                                     | Na última tela / antes do paywall    |
+| Paywall view/compra  | Automático via bridge do Superwall (evento `paywall`/`transaction`)      | Nada                                  |
+| Purchase             | Automático após validação StoreKit / Play (evento `transaction`)        | Nada                                 |
+| Eventos custom       | `PaywalloClient.track(name, { properties })`                             | Eventos de produto (CTA, share, ...) |
 
-> Drop-off é detectado pelo **server**: se um user dispara `step("X")` mas nunca `step("Y")` ou `complete()`, ele é contado como drop em "X". Você não precisa rastrear isso manualmente.
+> Drop-off é detectado pelo **server**: se um user dispara `step("X", n)` mas nunca `step("Y", n+1)` ou `complete()`, ele é contado como drop em "X". Você não precisa (e não pode mais) rastrear isso manualmente — não existe `drop()`.
 
 ---
 
@@ -39,35 +40,61 @@ import { useCallback } from "react";
 import { useOnboarding } from "@virex-tech/paywallo-sdk";
 
 interface IUseOnboardingTrackingReturn {
-  trackStep: (stepName: string) => Promise<void>;
-  trackComplete: () => Promise<void>;
-  trackDrop: (stepName: string) => Promise<void>;
+  trackStep: (stepName: string, order: number, options?: { variantKey?: string; timeOnPrevS?: number }) => Promise<void>;
+  trackComplete: (options?: { variantKey?: string }) => Promise<void>;
 }
 
 export const useOnboardingTracking = (): IUseOnboardingTrackingReturn => {
-  const { step, complete, drop } = useOnboarding();
+  const { step, complete } = useOnboarding();
 
   const trackStep = useCallback(
-    async (stepName: string): Promise<void> => {
-      await step(stepName);
+    async (
+      stepName: string,
+      order: number,
+      options?: { variantKey?: string; timeOnPrevS?: number },
+    ): Promise<void> => {
+      await step(stepName, order, options);
     },
     [step],
   );
 
-  const trackComplete = useCallback(async (): Promise<void> => {
-    await complete();
-  }, [complete]);
-
-  const trackDrop = useCallback(
-    async (stepName: string): Promise<void> => {
-      await drop(stepName);
+  const trackComplete = useCallback(
+    async (options?: { variantKey?: string }): Promise<void> => {
+      await complete(options);
     },
-    [drop],
+    [complete],
   );
 
-  return { trackStep, trackComplete, trackDrop };
+  return { trackStep, trackComplete };
 };
 ```
+
+### Assinatura confirmada (`useOnboarding`)
+
+```ts
+interface UseOnboardingResult {
+  step: (stepName: string, order: number, options?: { variantKey?: string; timeOnPrevS?: number }) => Promise<void>;
+  complete: (options?: { variantKey?: string }) => Promise<void>;
+}
+```
+
+- **`order` é obrigatório** — número finito e **não-negativo** (recomendado 1-based). Sem ele, ou com valor inválido (negativo, `NaN`, `Infinity`), `step()` **lança `OnboardingError`** (`ONBOARDING_INVALID_ORDER`) — quebra em runtime, não é um warning silencioso.
+- O servidor faz o **floor** do `order` — não arredonde você mesmo.
+- Use **decimais** para variantes A/B do mesmo passo: parte inteira = posição no funil, decimal = variante (ex: `step("paywall_variant_a", 2.1)` e `step("paywall_variant_b", 2.2)`). Para a maioria dos casos, prefira `variantKey` em `options` — é mais legível do que codificar a variante no decimal.
+- `options.variantKey` identifica a variante de um teste A/B com uma string legível (`"control"`, `"variant_b"`); `options.timeOnPrevS` registra o tempo gasto na tela anterior, em segundos.
+- `complete(options?)` aceita `{ variantKey? }` para fechar o funil pela variante correta.
+
+### Forma imperativa (sem hook)
+
+`PaywalloClient` também expõe um atalho para o mesmo pipeline, útil fora de componentes React (ex: em serviços, listeners de deep link):
+
+```ts
+import { PaywalloClient } from "@virex-tech/paywallo-sdk";
+
+await PaywalloClient.onboardingStep(order, stepName);
+```
+
+> ⚠️ **Ordem de argumentos invertida em relação ao hook:** `onboardingStep(order, stepName)` recebe `order` **primeiro**, enquanto `useOnboarding().step(stepName, order, options?)` recebe `stepName` primeiro. É uma pegadinha fácil de errar — confira a assinatura antes de usar. Além disso, `onboardingStep` não aceita `options` (`variantKey`/`timeOnPrevS`); para isso use o hook.
 
 ### Convenção de naming
 
@@ -102,13 +129,15 @@ import { useOnboardingTracking } from "./useOnboardingTracking";
 
 export const useOnboardingFlow = () => {
   const { trackStep, trackComplete } = useOnboardingTracking();
+  const currentStepIndex = useOnboardingStore((s) => s.currentStepIndex);
   const currentStep = useOnboardingStore((s) => s.currentStep);
   const isLastStep = useOnboardingStore((s) => s.isLastStep);
 
   useEffect(() => {
     if (!currentStep?.name) return;
-    void trackStep(currentStep.name);
-  }, [currentStep?.name, trackStep]);
+    // order 1-based: index 0 → order 1
+    void trackStep(currentStep.name, currentStepIndex + 1);
+  }, [currentStep?.name, currentStepIndex, trackStep]);
 
   const handleFinish = async (): Promise<void> => {
     await trackComplete();
@@ -121,18 +150,22 @@ export const useOnboardingFlow = () => {
 
 **Por que `useEffect` aqui é OK** (apesar do CLAUDE.md restringir useEffect a hooks): o efeito de tracking é uma função do estado da máquina de onboarding, não de uma renderização. Mantenha apenas no hook, nunca no componente.
 
-### `drop()` — quando usar
+### Abandono explícito (botão "skip")
 
-Use só em **abandono explícito**:
+Não existe mais `drop()`. Para **abandono passivo** (user fechou o app, não terminou), **não chame nada** — o server detecta automaticamente pela ausência do próximo `step` ou de `complete()`.
+
+Se o produto precisa de um sinal explícito de "usuário clicou em pular" (diferente de abandono por inatividade), use um evento **custom** — nunca reaproveite a taxonomia de onboarding para isso:
 
 ```tsx
 const handleSkipOnboarding = async (): Promise<void> => {
-  await trackDrop(currentStep.name);
+  await PaywalloClient.track("onboarding_skip_clicked", {
+    properties: { step_name: currentStep.name },
+  });
   router.replace(ROUTES.HOME);
 };
 ```
 
-Para abandono passivo (user fechou o app), **não chame nada** — o server detecta automaticamente pela ausência do próximo `step` ou de `complete`.
+Isso é opcional — o funil de drop-off no dashboard já funciona sem ele.
 
 ---
 
@@ -164,7 +197,7 @@ await PaywalloClient.track("checkout_started", {
 
 ```ts
 track(eventName: string, options?: {
-  properties?: UserProperties;       // Record<string, string|number|boolean|null>
+  properties?: UserProperties;       // Record<string, string|number|boolean|null | Record<string, primitivo>>
   timestamp?: number;                // ms — default: agora
   priority?: "critical" | "normal";  // default: normal
 }): Promise<void>
@@ -172,27 +205,29 @@ track(eventName: string, options?: {
 
 **Quando usar `priority: "critical"`:**
 
-- Eventos onde a perda é inaceitável: `transaction`, `subscription_*`, `refund`, `checkout_started`, `identify`, `install`
-- O SDK já marca automaticamente os eventos de IAP / lifecycle como críticos. **Você só precisa marcar eventos de produto que sejam financeiros.**
-- `normal` é o default e bufferiza em **lotes de até 10 eventos a cada 5 segundos** — ideal para tracking de UI.
+- Eventos onde a perda é inaceitável: `transaction`, `identify`, `lifecycle{type:"install"}`, `subscription_*`/`refund`, `checkout_started`
+- O SDK já marca automaticamente os eventos de IAP / lifecycle de install como críticos. **Você só precisa marcar eventos de produto que sejam financeiros.**
+- `normal` é o default e bufferiza numa janela rolante de **até 25 eventos ou 30 segundos** (o que disparar primeiro) — ideal para tracking de UI, onboarding e eventos de paywall (que também são `normal`).
 
-### Fila offline
+### Durabilidade (não existe mais "fila offline" do jeito antigo)
 
-Se o device fica offline, o SDK persiste eventos numa fila local (até **100 itens**, expira em **3 dias**). Quando a conexão volta, drena automaticamente. Você pode consultar:
+A fila offline durável antiga (`getOfflineQueueSize`/`clearOfflineQueue`/`processOfflineQueue`) foi **removida** após um incidente de perda de eventos — esses três métodos continuam exportados por compatibilidade, mas são **no-ops `@deprecated`**: `getOfflineQueueSize()` sempre retorna `0`, os outros dois não fazem nada. Eles saem de vez na 3.0.0 — não construa lógica em cima deles.
 
-```tsx
-const queueSize = PaywalloClient.getOfflineQueueSize();
-```
+O que existe hoje, sem nada para você configurar:
+
+- **Eventos `critical`**: retry durável limitado via `PendingRetry` (2 tentativas, backoff 1min/5min), sobrevive a restart do app.
+- **Eventos `normal`** (a partir da 2.10.1): também ganham retry durável via `PendingNormalQueue` — fila persistida com teto de 500 eventos e idade máxima de 24h (o mais antigo é descartado primeiro quando estoura). Reenviado no próximo flush, na volta a foreground e quando a rede volta. 4xx continua descartando na hora (payload inválido — reenviar não muda nada).
+- Todo evento perdido de vez (4xx, estouro de fila, expiração por idade) é contado internamente e reportado num evento `$sdk_events_dropped` no próximo flush bem-sucedido — você não precisa fazer nada para isso acontecer, só saber que existe se for auditar perda de eventos no dashboard.
 
 ### Convenção de naming de eventos
 
 | Tipo                        | Convenção             | Exemplo                    |
-| :-------------------------- | :-------------------- | :------------------------- |
-| Ação do user                | `noun_verb` (passado) | `recipe_saved`, `goal_set` |
-| Funil custom (não onb.)     | `flow_step_action`    | `meal_plan_step_completed` |
-| Evento crítico (financeiro) | `noun_verb`           | `checkout_started`         |
+| :-------------------------- | :--------------------- | :-------------------------- |
+| Ação do user                | `noun_verb` (passado)  | `recipe_saved`, `goal_set`  |
+| Funil custom (não onb.)     | `flow_step_action`     | `meal_plan_step_completed`  |
+| Evento crítico (financeiro) | `noun_verb`            | `checkout_started`          |
 
-**Não use** prefixos `$` em eventos custom — esses são reservados para taxonomia do SDK (`$paywall_viewed`, `$onboarding_step`, etc.). Misturar quebra dashboards.
+**Não use** prefixos `$` em eventos custom — esses são reservados para taxonomia interna do SDK. Misturar quebra dashboards e, dependendo do nome, pode ser rejeitado por validação de nome reservado.
 
 ---
 
@@ -218,18 +253,17 @@ Atributos de identify aparecem no dashboard como filtros segmentáveis ("usuári
 **Não envie em identify:**
 
 - `lastActiveAt` — muda a cada sessão (use `track` com session events)
-- PII além de email (telefone, endereço)
+- PII além de email (telefone, endereço) — a menos que use os campos dedicados (`phone`, `firstName`, `lastName`, `dateOfBirth`, `zipCode`, `city`, `state` fazem parte de `IdentifyOptions`)
 - Tokens, IDs de sessão
 
 ### Limites de propriedades
 
-| Limite                           | Valor                            |
-| :------------------------------- | :------------------------------- |
-| Chaves por usuário               | **50**                           |
-| Tamanho de cada valor            | **1 KB**                         |
-| Profundidade (se valor é objeto) | **3 níveis** (recomendado: flat) |
+| Limite                           | Valor                              |
+| :------------------------------- | :---------------------------------- |
+| Chaves por usuário                | **50** (`boundedProperties`)        |
+| Profundidade (se valor é objeto)  | **3 níveis** (recomendado: flat)    |
 
-> O merge de `identify` é **não-destrutivo**: chamar `identify` de novo adiciona/atualiza campos sem apagar os existentes. Eventos disparados antes do `identify` ficam associados ao mesmo usuário.
+> O merge de `identify` é **não-destrutivo**: chamar `identify` de novo adiciona/atualiza campos sem apagar os existentes. Eventos disparados antes do `identify` ficam associados ao mesmo usuário. A partir da 2.10.0, `identify()` também **deduplica**: se o payload (traits + PII + atribuição) não mudou nas últimas 24h, a chamada não reenvia rede — o app pode chamar `identify` de novo sem se preocupar com custo.
 
 ### Atualizando properties sem mudar email
 
@@ -245,26 +279,20 @@ Passar `identify` sem `email` apenas atualiza properties — útil quando o user
 
 ## 5. Que eventos **não** rastrear manualmente
 
-O SDK 2.x já emite estes — rastrear manualmente causa duplicação:
+O SDK 2.x usa uma taxonomia de **famílias canônicas** (`lifecycle`, `identify`, `paywall`, `transaction`, `onboarding`, `notification`) — cada uma com um campo `type` que distingue o subtipo. Rastrear manualmente qualquer coisa nessas famílias causa duplicação:
 
-| Evento                      | Emitido automaticamente em                                           |
-| :-------------------------- | :------------------------------------------------------------------- |
-| `$app_installed`            | Primeira abertura do app (inclui device model, OS, locale, referrer) |
-| `$app_open`                 | App volta a foreground                                               |
-| `$app_background`           | App vai pra background (inclui duração da sessão)                    |
-| `$session_start`            | Nova sessão começa (`autoStartSession`, timeout 30 min)              |
-| `$session_end`              | Sessão termina                                                       |
-| `$paywall_viewed`           | Paywall aparece (placement, paywallId, variantKey)                   |
-| `$paywall_product_selected` | User escolhe um produto no paywall                                   |
-| `$paywall_dismissed`        | Paywall fecha (com `action`: `close` / `purchase` / `restore`)       |
-| `$paywall_purchased`        | Compra validada via paywall                                          |
-| `$purchase_completed`       | Qualquer compra validada (standalone ou via paywall)                 |
-| `$trial_started`            | Trial iniciado                                                       |
-| `$subscription_started`     | Assinatura ativa começou                                             |
-| `$subscription_renewed`     | Renovação automática (listener nativo `Transaction.updates`)         |
-| `$onboarding_step`          | `useOnboarding().step(...)`                                          |
-| `$onboarding_completed`     | `useOnboarding().complete()`                                         |
-| `$onboarding_dropped`       | `useOnboarding().drop(...)`                                          |
+| Família / evento                              | `type` / detalhe                                                                 | Emitido automaticamente em                                              |
+| :--------------------------------------------- | :---------------------------------------------------------------------------------- | :------------------------------------------------------------------------ |
+| `$app_installed`                               | —                                                                                     | Primeira abertura do app (inclui device model, OS, locale, atribuição)   |
+| `$session_start`                               | —                                                                                     | Nova sessão começa                                                       |
+| `lifecycle`                                    | `cold_start` / `foreground` / `background` / `session_end`                          | Ciclo de vida do app (foreground, background, fim de sessão)            |
+| `paywall`                                      | `viewed` / `closed` / `purchased`                                                    | Bridge automático do Superwall (`onPaywallPresent`/`onPaywallDismiss`)   |
+| `transaction`                                  | `completed` / `trial_started` / `renewed` / `refunded` / `canceled` / `expired` / `failed` | Compra validada (via Superwall `transactionComplete` ou IAP direto)      |
+| `onboarding`                                   | `step` / `complete`                                                                   | `useOnboarding().step(...)` / `useOnboarding().complete(...)`            |
+| `notification`                                 | `delivered` / `displayed` / `clicked` / `dismissed`                                  | Push notification lifecycle                                              |
+| `identify`                                     | —                                                                                     | `PaywalloClient.identify(...)`                                            |
+
+> **Não existe mais `$onboarding_dropped`** — a taxonomia de onboarding só tem `step` e `complete`; abandono é inferido, não emitido.
 
 ---
 
@@ -272,12 +300,11 @@ O SDK 2.x já emite estes — rastrear manualmente causa duplicação:
 
 ### Ver eventos em tempo real
 
-`debug: __DEV__` no Provider faz o SDK logar cada evento enviado:
+`debug: __DEV__` no Provider faz o SDK logar cada evento enviado. O onboarding tem seu próprio prefixo:
 
 ```
-[Paywallo] track onboarding.step { step_name: "goal_selection" }
-[Paywallo] track custom.recipe_saved { recipe_id: "rec_123" }
-[Paywallo] flush batch (5 events) → 200 OK
+[Paywallo:Onboarding] event emitted: onboarding.step { step_name: "goal_selection", order: 2 }
+[Paywallo:Onboarding] event emitted: onboarding.complete {}
 ```
 
 ### Forçar flush imediato
@@ -293,37 +320,34 @@ await PaywalloClient.endSession(); // força flush + finaliza sessão
 await PaywalloClient.startSession(); // recomeça
 ```
 
-### Verificar fila offline
-
-```tsx
-const queueSize = PaywalloClient.getOfflineQueueSize();
-// Se > 0, há eventos pendentes (user esteve offline)
-```
-
 ---
 
 ## 7. Checklist de instrumentação
 
-- [ ] Cada tela do onboarding chama `step(stepName)` no mount via hook
+- [ ] Cada tela do onboarding chama `step(stepName, order)` no mount via hook — `order` **sempre** presente e válido (finito, ≥ 0)
 - [ ] `complete()` é chamado **uma vez** ao fim do onboarding (antes do paywall)
+- [ ] Nenhuma chamada a `drop()` no codebase — não existe desde a 2.6.0
 - [ ] Nomes de step são `snake_case`, semânticos, estáveis
 - [ ] `identify` é chamado após login com email + atributos de segmentação
 - [ ] Eventos críticos (financeiros / de checkout custom) usam `priority: "critical"`
-- [ ] Nenhum `track("$paywall_*")` ou `track("$onboarding_*")` manual no codebase
-- [ ] Em dev, console mostra `[Paywallo] track ...` para cada step
+- [ ] Nenhum `track("paywall", ...)`, `track("transaction", ...)` ou `track("onboarding", ...)` manual no codebase — são famílias reservadas ao SDK
+- [ ] Em dev, console mostra `[Paywallo:Onboarding] event emitted: ...` para cada step
 
 ---
 
 ## 8. Anti-patterns
 
-| ❌ Não faça                                                                 | ✅ Faça                                                   |
-| :-------------------------------------------------------------------------- | :-------------------------------------------------------- |
-| `track("$onboarding_step", { stepIndex: 3, stepName: "..." })`              | `useOnboarding().step("goal_selection")`                  |
-| Wrapper `paywalloService.trackOnboardingStep(...)` (não existe)             | Hook `useOnboarding` direto                               |
-| Tracking de step em `useEffect` no **componente** (proibido pelo CLAUDE.md) | Em hook customizado da feature                            |
-| Renomear `stepName` mid-funcionamento                                       | Decidir nome **antes** de subir para produção             |
-| `track("login_success")` após `identify`                                    | `identify` já é o evento — não duplique                   |
-| `properties` com objetos aninhados                                          | Achatar (ex: `goal_type` em vez de `goal: { type: ... }`) |
+| ❌ Não faça                                                                  | ✅ Faça                                                                |
+| :---------------------------------------------------------------------------- | :----------------------------------------------------------------------- |
+| `useOnboarding().step("goal_selection")` sem `order`                          | `useOnboarding().step("goal_selection", 3)` — `order` é obrigatório      |
+| `useOnboarding().drop(stepName)` (não existe desde a 2.6.0)                  | Nenhuma chamada — abandono é inferido pelo servidor                      |
+| `PaywalloClient.onboardingStep(stepName, order)`                              | `PaywalloClient.onboardingStep(order, stepName)` — ordem invertida!      |
+| Wrapper `paywalloService.trackOnboardingStep(...)` (não existe)              | Hook `useOnboarding` direto                                              |
+| Tracking de step em `useEffect` no **componente** (proibido pelo CLAUDE.md)  | Em hook customizado da feature                                           |
+| Renomear `stepName` mid-funcionamento                                        | Decidir nome **antes** de subir para produção                            |
+| `track("login_success")` após `identify`                                     | `identify` já é o evento — não duplique                                  |
+| `properties` com objetos aninhados em múltiplos níveis                      | Achatar (ex: `goal_type` em vez de `goal: { type: ... }`)                |
+| Confiar em `getOfflineQueueSize()`/`processOfflineQueue()` (no-op desde 2.7.0) | Confiar no retry durável interno (`PendingRetry`/`PendingNormalQueue`)   |
 
 ---
 
